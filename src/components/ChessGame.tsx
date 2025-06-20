@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
@@ -39,7 +40,27 @@ export const ChessGame = () => {
           if (aiMove) {
             console.log("AI suggested move:", aiMove);
             try {
-              const aiMoveResult = gameCopy.move(aiMove);
+              // Try the move as-is first (standard algebraic notation)
+              let aiMoveResult = null;
+              try {
+                aiMoveResult = gameCopy.move(aiMove);
+              } catch (firstError) {
+                // If that fails, try to find a valid move that matches
+                const possibleMoves = gameCopy.moves({ verbose: true });
+                const matchingMove = possibleMoves.find(m => 
+                  m.san === aiMove || 
+                  m.lan === aiMove || 
+                  m.from + m.to === aiMove ||
+                  m.san.replace(/[+#]/, '') === aiMove.replace(/[+#]/, '')
+                );
+                
+                if (matchingMove) {
+                  aiMoveResult = gameCopy.move(matchingMove.san);
+                } else {
+                  throw firstError;
+                }
+              }
+              
               if (aiMoveResult) {
                 setGame(new Chess(gameCopy.fen()));
                 setGameHistory(prev => [...prev, aiMoveResult.san]);
