@@ -26,7 +26,7 @@ export class ChessAgent {
           messages: [
             {
               role: 'system',
-              content: 'You are a chess grandmaster. Analyze positions deeply and explain your thinking process clearly.'
+              content: 'You are a chess grandmaster. Analyze positions deeply and explain your thinking process clearly. Always end with FINAL DECISION: followed by your move in standard algebraic notation (like e4, Nf3, O-O, etc.).'
             },
             {
               role: 'user',
@@ -74,9 +74,27 @@ export class ChessAgent {
         }
       }
 
-      // Extract move from the response
-      const moveMatch = fullResponse.match(/MOVE:\s*([a-h][1-8][a-h][1-8][qrnb]?)/i);
-      return moveMatch ? moveMatch[1] : null;
+      // Extract move from the response - look for FINAL DECISION pattern
+      const finalDecisionMatch = fullResponse.match(/FINAL DECISION:\s*([a-zA-Z0-9\-+=#]+)/i);
+      if (finalDecisionMatch) {
+        return finalDecisionMatch[1].trim();
+      }
+
+      // Fallback: look for common move patterns
+      const movePatterns = [
+        /\b([a-h][1-8][a-h][1-8][qrnb]?)\b/i, // Long algebraic notation
+        /\b([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8][+#]?)\b/i, // Standard algebraic notation
+        /\b(O-O-O|O-O)\b/i // Castling
+      ];
+
+      for (const pattern of movePatterns) {
+        const match = fullResponse.match(pattern);
+        if (match) {
+          return match[1].trim();
+        }
+      }
+
+      return null;
 
     } catch (error) {
       console.error('Error getting AI move:', error);
@@ -109,12 +127,13 @@ Please structure your analysis as follows:
    - Long-term plans
    - Weaknesses to exploit
 
-5. FINAL DECISION:
-   - Your chosen move with reasoning
+5. FINAL DECISION: [your move in standard algebraic notation]
 
-End your response with: MOVE: [your move in algebraic notation]
-
-Example: MOVE: e2e4 or MOVE: Nf3
+Examples: 
+- FINAL DECISION: e4
+- FINAL DECISION: Nf3
+- FINAL DECISION: O-O
+- FINAL DECISION: Qxf7+
 
 Think like a grandmaster and show your complete thought process!
     `;

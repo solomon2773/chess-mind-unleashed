@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
@@ -38,11 +37,24 @@ export const ChessGame = () => {
           });
           
           if (aiMove) {
-            const aiMoveResult = gameCopy.move(aiMove);
-            if (aiMoveResult) {
-              setGame(new Chess(gameCopy.fen()));
-              setGameHistory(prev => [...prev, aiMoveResult.san]);
+            console.log("AI suggested move:", aiMove);
+            try {
+              const aiMoveResult = gameCopy.move(aiMove);
+              if (aiMoveResult) {
+                setGame(new Chess(gameCopy.fen()));
+                setGameHistory(prev => [...prev, aiMoveResult.san]);
+                console.log("AI move executed successfully:", aiMoveResult.san);
+              } else {
+                console.error("AI move was invalid:", aiMove);
+                setCurrentThought(prev => prev + "\n\n[Error: AI suggested an invalid move]");
+              }
+            } catch (error) {
+              console.error("Error executing AI move:", error);
+              setCurrentThought(prev => prev + "\n\n[Error: Could not execute AI move]");
             }
+          } else {
+            console.log("AI did not return a valid move");
+            setCurrentThought(prev => prev + "\n\n[Error: AI did not provide a valid move]");
           }
           
           setIsAiThinking(false);
