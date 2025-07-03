@@ -118,10 +118,21 @@ export class LangChainChessAgent {
 
   async getMove(fen: string, onThought?: (thought: string) => void): Promise<string | null> {
     try {
-      const prompt = this.buildPrompt(fen);
+      // Create a temporary chess instance to get legal moves
+      const tempChess = new (await import('chess.js')).Chess(fen);
+      const legalMoves = tempChess.moves();
+      
+      // Check if game is over
+      if (legalMoves.length === 0) {
+        console.log('No legal moves available - game is over');
+        onThought?.('Game is over - no legal moves available.\n');
+        return null;
+      }
+      
+      const prompt = this.buildPrompt(fen, legalMoves);
       
       const messages = [
-        new SystemMessage('You are a chess grandmaster. Analyze positions deeply and explain your thinking process clearly. Always end with FINAL DECISION: followed by your move in standard algebraic notation (like e4, Nf3, O-O, etc.).'),
+        new SystemMessage('You are a chess grandmaster. Analyze positions deeply and explain your thinking process clearly. Always end with FINAL DECISION: followed by your move in standard algebraic notation. CRITICAL: You will be provided with a list of legal moves. You MUST choose your move from that list only. Do not suggest any move that is not in the provided legal moves list.'),
         new HumanMessage(prompt)
       ];
 
@@ -138,22 +149,46 @@ export class LangChainChessAgent {
       }
 
       // Extract move from the response
-      const finalDecisionMatch = fullResponse.match(/FINAL DECISION:\s*([a-zA-Z0-9\-+=#]+)/i);
+      const finalDecisionMatch = fullResponse.match(/FINAL DECISION:\s*([a-zA-Z0-9\-+=#\s\[\]]+)/i);
       if (finalDecisionMatch) {
-        return finalDecisionMatch[1].trim();
+        const moveText = finalDecisionMatch[1].trim();
+        
+        // Check if AI is reporting stalemate or no legal moves
+        if (moveText.toLowerCase().includes('stalemate') || 
+            moveText.toLowerCase().includes('no legal move') ||
+            moveText.toLowerCase().includes('draw')) {
+          console.log('AI reports stalemate or no legal moves');
+          return null;
+        }
+        
+        // Extract actual move from the text
+        const moveMatch = moveText.match(/([a-zA-Z0-9\-+=#]+)/);
+        if (moveMatch) {
+          const move = moveMatch[1].trim();
+          // Validate the move format
+          if (this.isValidMoveFormat(move)) {
+            return move;
+          }
+        }
       }
 
-      // Fallback: look for common move patterns
+      // Fallback: look for common move patterns in the last few lines
+      const lines = fullResponse.split('\n').slice(-10); // Check last 10 lines
       const movePatterns = [
         /\b([a-h][1-8][a-h][1-8][qrnb]?)\b/i,
         /\b([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8][+#]?)\b/i,
         /\b(O-O-O|O-O)\b/i
       ];
 
-      for (const pattern of movePatterns) {
-        const match = fullResponse.match(pattern);
-        if (match) {
-          return match[1].trim();
+      for (const line of lines) {
+        for (const pattern of movePatterns) {
+          const match = line.match(pattern);
+          if (match) {
+            const move = match[1].trim();
+            if (this.isValidMoveFormat(move)) {
+              return move;
+            }
+          }
         }
       }
 
@@ -166,9 +201,17 @@ export class LangChainChessAgent {
     }
   }
 
-  private buildPrompt(fen: string): string {
+  private buildPrompt(fen: string, legalMoves: string[]): string {
     return `
-Analyze this chess position (FEN: ${fen}) and provide your thinking process.
+IMPORTANT: You are analyzing the EXACT current position given by this FEN: ${fen}
+
+This is NOT the starting position. This is the current state of the game after many moves have been played.
+
+LEGAL MOVES AVAILABLE: ${legalMoves.join(', ')}
+
+You MUST choose your move from this list of legal moves only!
+
+IMPORTANT: If there are no legal moves available (empty list), the game is over. In this case, respond with "FINAL DECISION: [Game Over]" and explain why the game ended (checkmate, stalemate, draw, etc.).
 
 Please structure your analysis as follows:
 
@@ -179,8 +222,9 @@ Please structure your analysis as follows:
    - Piece activity
 
 2. CANDIDATE MOVES:
-   - List 3-5 candidate moves
+   - List 3-5 candidate moves that are ACTUALLY LEGAL in this position
    - Brief reasoning for each
+   - DO NOT suggest moves that were legal in the opening but are not legal now
 
 3. CALCULATION:
    - Analyze the most promising variations
@@ -192,14 +236,32 @@ Please structure your analysis as follows:
 
 5. FINAL DECISION: [your move in standard algebraic notation]
 
-Examples: 
-- FINAL DECISION: e4
-- FINAL DECISION: Nf3
-- FINAL DECISION: O-O
-- FINAL DECISION: Qxf7+
+CRITICAL: You MUST only suggest moves that are actually legal in the current position!
+- Check the FEN position carefully
+- Do not suggest moves like "e4" or "Nf3" if they are not legal
+- Look at the actual piece positions and available moves
+- If unsure, choose a simple, safe move that you can verify is legal
+
+Examples of legal moves (but verify they exist in this position):
+- Pawn moves: e4, d5, e5, etc.
+- Piece moves: Nf3, Bc4, Qd2, etc.
+- Captures: Nxe4, Qxf7+, etc.
+- Castling: O-O (kingside), O-O-O (queenside) - ONLY if legal
 
 Think like a grandmaster and show your complete thought process!
     `;
+  }
+
+  private isValidMoveFormat(move: string): boolean {
+    // Basic validation for chess move format
+    const validPatterns = [
+      /^[a-h][1-8][a-h][1-8][qrnb]?$/, // Long algebraic notation (e2e4, e7e8q)
+      /^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8][+#]?$/, // Standard algebraic notation (e4, Nf3, Qxf7+)
+      /^(O-O|O-O-O)$/, // Castling
+      /^[a-h][1-8]$/, // Pawn moves (e4, d5)
+    ];
+    
+    return validPatterns.some(pattern => pattern.test(move));
   }
 
   getModelInfo(): string {

@@ -1,8 +1,9 @@
 
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, Copy, Play, Pause } from "lucide-react";
+import { Brain, Copy, Play, Pause, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PlayerConfig } from "./PlayerConfig";
 
 interface DualThinkingWindowProps {
   whiteThoughts: string;
@@ -11,10 +12,11 @@ interface DualThinkingWindowProps {
   blackCurrentThought: string;
   isThinking: boolean;
   currentPlayer: 'white' | 'black';
-  whitePlayerName?: string;
-  blackPlayerName?: string;
+  whitePlayerConfig?: PlayerConfig;
+  blackPlayerConfig?: PlayerConfig;
   isGameRunning: boolean;
   onToggleGame: () => void;
+  onClearThoughts?: () => void;
 }
 
 export const DualThinkingWindow = ({ 
@@ -24,10 +26,11 @@ export const DualThinkingWindow = ({
   blackCurrentThought, 
   isThinking, 
   currentPlayer,
-  whitePlayerName,
-  blackPlayerName,
+  whitePlayerConfig,
+  blackPlayerConfig,
   isGameRunning,
-  onToggleGame
+  onToggleGame,
+  onClearThoughts
 }: DualThinkingWindowProps) => {
   const whiteScrollRef = useRef<HTMLDivElement>(null);
   const blackScrollRef = useRef<HTMLDivElement>(null);
@@ -52,13 +55,45 @@ export const DualThinkingWindow = ({
     color: 'white' | 'black',
     thoughts: string,
     currentThought: string,
-    playerName?: string,
+    playerConfig?: PlayerConfig,
     scrollRef?: React.RefObject<HTMLDivElement>
   ) => {
     const isActive = currentPlayer === color && isThinking;
     const gradientClass = color === 'white' 
       ? 'from-gray-600 to-gray-800' 
       : 'from-gray-800 to-black';
+
+    // Get model name for AI players
+    const getModelName = (provider?: string) => {
+      const modelNames: Record<string, string> = {
+        'openai-gpt4': 'GPT-4 Turbo',
+        'openai-gpt35': 'GPT-3.5 Turbo',
+        'claude-sonnet': 'Claude 3.5 Sonnet',
+        'claude-haiku': 'Claude 3 Haiku',
+        'gemini-pro': 'Gemini Pro',
+        'gemini-flash': 'Gemini 1.5 Flash',
+        'azure-gpt4': 'Azure GPT-4',
+        'azure-gpt35': 'Azure GPT-3.5'
+      };
+      return provider ? modelNames[provider] || provider : '';
+    };
+
+    const getPlayerTitle = () => {
+      if (!playerConfig) {
+        return `${color.charAt(0).toUpperCase() + color.slice(1)} Player`;
+      }
+      
+      if (playerConfig.type === 'human') {
+        return `${playerConfig.name} (${color.charAt(0).toUpperCase() + color.slice(1)})`;
+      }
+      
+      if (playerConfig.type === 'ai' && playerConfig.llmProvider) {
+        const modelName = getModelName(playerConfig.llmProvider);
+        return `${playerConfig.name} - ${modelName} (${color.charAt(0).toUpperCase() + color.slice(1)})`;
+      }
+      
+      return `${playerConfig.name} (${color.charAt(0).toUpperCase() + color.slice(1)})`;
+    };
 
     return (
       <div className="bg-white rounded-lg shadow-md overflow-hidden flex-1">
@@ -67,24 +102,23 @@ export const DualThinkingWindow = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Brain className="w-4 h-4" />
-              <h4 className="font-semibold text-sm">
-                {playerName ? `${playerName} (${color.charAt(0).toUpperCase() + color.slice(1)})` : `${color.charAt(0).toUpperCase() + color.slice(1)} Player`}
-              </h4>
-            </div>
-            <div className="flex items-center gap-2">
-              <AnimatePresence>
+              <div className="text-sm">
+                <h4 className="font-semibold leading-tight">
+                  {getPlayerTitle()}
+                </h4>
                 {isActive && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0 }}
-                    className="flex items-center gap-1 text-xs bg-white/20 px-2 py-1 rounded-full"
+                  <motion.div 
+                    className="text-xs opacity-90 mt-1 flex items-center gap-1"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
                   >
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                     Thinking...
                   </motion.div>
                 )}
-              </AnimatePresence>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => copyToClipboard(thoughts, currentThought)}
                 className="p-1 hover:bg-white/20 rounded transition-colors"
@@ -173,10 +207,24 @@ export const DualThinkingWindow = ({
 
       {/* Dual Thinking Panels */}
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-800">AI Thinking Process</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-800">AI Thinking Process</h3>
+          {onClearThoughts && (
+            <Button
+              onClick={onClearThoughts}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+              disabled={isThinking}
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear Thoughts
+            </Button>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {renderThinkingPanel('white', whiteThoughts, whiteCurrentThought, whitePlayerName, whiteScrollRef)}
-          {renderThinkingPanel('black', blackThoughts, blackCurrentThought, blackPlayerName, blackScrollRef)}
+          {renderThinkingPanel('white', whiteThoughts, whiteCurrentThought, whitePlayerConfig, whiteScrollRef)}
+          {renderThinkingPanel('black', blackThoughts, blackCurrentThought, blackPlayerConfig, blackScrollRef)}
         </div>
       </div>
     </div>

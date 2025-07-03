@@ -11,18 +11,28 @@ interface GameStatusProps {
 export const GameStatus = ({ game, isAiThinking }: GameStatusProps) => {
   const getGameStatus = () => {
     if (game.isCheckmate()) {
+      const winner = game.turn() === 'w' ? 'Black' : 'White';
       return {
-        status: "Checkmate!",
-        description: `${game.turn() === 'w' ? 'Black' : 'White'} wins!`,
+        status: "🏆 Checkmate!",
+        description: `${winner} wins the game!`,
         icon: Crown,
         color: "text-yellow-600 bg-yellow-50 border-yellow-200"
       };
     }
     
     if (game.isDraw()) {
+      let drawReason = "The game ended in a draw";
+      if (game.isStalemate()) {
+        drawReason = "Stalemate - no legal moves available";
+      } else if (game.isThreefoldRepetition()) {
+        drawReason = "Draw by threefold repetition";
+      } else if (game.isInsufficientMaterial()) {
+        drawReason = "Draw by insufficient material";
+      }
+      
       return {
-        status: "Draw!",
-        description: "The game ended in a draw",
+        status: "🤝 Draw!",
+        description: drawReason,
         icon: Users,
         color: "text-gray-600 bg-gray-50 border-gray-200"
       };

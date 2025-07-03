@@ -78,13 +78,17 @@ export const ChessGame = () => {
       if (newValue && !game.isGameOver()) {
         const currentPlayerConfig = game.turn() === 'w' ? whitePlayer : blackPlayer;
         if (currentPlayerConfig.type === 'ai') {
-          setTimeout(() => handleAiMove(game, currentPlayerConfig), 500);
+          // Use a longer delay to ensure state is updated
+          setTimeout(() => {
+            const player = game.turn() === 'w' ? 'white' : 'black';
+            setPendingAiMove({ player });
+          }, 1000);
         }
       }
       
       return newValue;
     });
-  }, [game, whitePlayer, blackPlayer, handleAiMove]);
+  }, [game, whitePlayer, blackPlayer]);
 
   const handleResetGame = useCallback(() => {
     resetGame();
@@ -101,8 +105,21 @@ export const ChessGame = () => {
   const handleAiMoveComplete = useCallback((newGame: any, moveResult: any) => {
     updateGameState(newGame, moveResult);
     
+    // Check if game is over
+    if (newGame.isGameOver()) {
+      console.log("Game is over!");
+      if (newGame.isCheckmate()) {
+        console.log(`Checkmate! ${newGame.turn() === 'w' ? 'Black' : 'White'} wins!`);
+      } else if (newGame.isDraw()) {
+        console.log("Game ended in a draw");
+      } else if (newGame.isStalemate()) {
+        console.log("Game ended in stalemate");
+      }
+      return;
+    }
+    
     // Check if next player is also AI and continue the game
-    if (!newGame.isGameOver() && isGameRunning) {
+    if (isGameRunning) {
       const nextPlayer = newGame.turn() === 'w' ? whitePlayer : blackPlayer;
       if (nextPlayer.type === 'ai') {
         setTimeout(() => handleAiMove(newGame, nextPlayer), 1500);
@@ -210,10 +227,11 @@ export const ChessGame = () => {
               blackCurrentThought={blackCurrentThought}
               isThinking={isAiThinking}
               currentPlayer={currentPlayer}
-              whitePlayerName={whitePlayer.name}
-              blackPlayerName={blackPlayer.name}
+              whitePlayerConfig={whitePlayer}
+              blackPlayerConfig={blackPlayer}
               isGameRunning={isGameRunning}
               onToggleGame={toggleGame}
+              onClearThoughts={clearThoughts}
             />
 
             {/* Move History */}
