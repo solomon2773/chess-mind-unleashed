@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
@@ -89,6 +90,8 @@ export const ChessGame = () => {
   }, [game, whitePlayer, blackPlayer]);
 
   const makeMove = useCallback(async (move: string) => {
+    if (!isGameRunning) return;
+    
     try {
       const gameCopy = new Chess(game.fen());
       const moveResult = gameCopy.move(move);
@@ -99,22 +102,27 @@ export const ChessGame = () => {
         setCurrentPlayer(gameCopy.turn() === 'w' ? 'white' : 'black');
         
         // Check if next player is AI and game is not over
-        if (!gameCopy.isGameOver()) {
+        if (!gameCopy.isGameOver() && isGameRunning) {
           const nextPlayer = gameCopy.turn() === 'w' ? whitePlayer : blackPlayer;
           
           if (nextPlayer.type === 'ai') {
-            await makeAiMove(gameCopy, nextPlayer);
+            setTimeout(() => makeAiMove(gameCopy, nextPlayer), 1000);
           }
         }
       }
     } catch (error) {
       console.error("Invalid move:", error);
     }
-  }, [game, whitePlayer, blackPlayer, apiKeys]);
+  }, [game, whitePlayer, blackPlayer, isGameRunning]);
 
   const makeAiMove = async (currentGame: Chess, playerConfig: PlayerConfig) => {
+    if (!isGameRunning) return;
+    
     const agent = createAgent(playerConfig);
-    if (!agent) return;
+    if (!agent) {
+      console.error("Could not create AI agent");
+      return;
+    }
 
     setIsAiThinking(true);
     const isWhite = currentGame.turn() === 'w';
@@ -128,60 +136,92 @@ export const ChessGame = () => {
       setBlackThoughts("");
     }
 
-    const aiMove = await agent.getMove(currentGame.fen(), (thought) => {
-      if (isWhite) {
-        setWhiteCurrentThought(thought);
-        setWhiteThoughts(prev => prev + thought);
-      } else {
-        setBlackCurrentThought(thought);
-        setBlackThoughts(prev => prev + thought);
-      }
-    });
+    try {
+      const aiMove = await agent.getMove(currentGame.fen(), (thought) => {
+        if (isWhite) {
+          setWhiteCurrentThought(thought);
+          setWhiteThoughts(prev => prev + thought);
+        } else {
+          setBlackCurrentThought(thought);
+          setBlackThoughts(prev => prev + thought);
+        }
+      });
 
-    if (aiMove) {
-      try {
-        // Convert move notation if needed
-        let validMove = aiMove;
+      if (aiMove) {
+        console.log(`AI suggested move: ${aiMove}`);
         
+        // Create a fresh copy of the game to avoid state issues
+        const freshGame = new Chess(currentGame.fen());
+        let validMove = null;
+        let moveResult = null;
+
+        // Try the move as-is first
         try {
-          currentGame.move(validMove);
-        } catch {
-          // Try to find matching move from valid moves
-          const possibleMoves = currentGame.moves({ verbose: true });
+          moveResult = freshGame.move(aiMove);
+          if (moveResult) {
+            validMove = aiMove;
+          }
+        } catch (error) {
+          console.log(`Direct move failed: ${aiMove}`);
+        }
+
+        // If direct move failed, try to find a matching move
+        if (!validMove) {
+          const possibleMoves = freshGame.moves({ verbose: true });
           const matchingMove = possibleMoves.find(m => 
             m.san === aiMove || 
             m.lan === aiMove || 
-            m.from + m.to === aiMove ||
-            m.san.replace(/[+#]/, '') === aiMove.replace(/[+#]/, '')
+            (m.from + m.to) === aiMove ||
+            m.san.replace(/[+#]/, '') === aiMove.replace(/[+#]/, '') ||
+            m.san.toLowerCase() === aiMove.toLowerCase()
           );
           
           if (matchingMove) {
-            validMove = matchingMove.san;
-          } else {
-            throw new Error("No matching move found");
-          }
-        }
-
-        const aiMoveResult = currentGame.move(validMove);
-        if (aiMoveResult) {
-          setGame(new Chess(currentGame.fen()));
-          setGameHistory(prev => [...prev, aiMoveResult.san]);
-          setCurrentPlayer(currentGame.turn() === 'w' ? 'white' : 'black');
-          
-          // If both players are AI, continue the game
-          if (!currentGame.isGameOver()) {
-            const nextPlayer = currentGame.turn() === 'w' ? whitePlayer : blackPlayer;
-            if (nextPlayer.type === 'ai') {
-              setTimeout(() => makeAiMove(currentGame, nextPlayer), 1000);
+            // Reset the game and try the matching move
+            freshGame.load(currentGame.fen());
+            try {
+              moveResult = freshGame.move(matchingMove.san);
+              if (moveResult) {
+                validMove = matchingMove.san;
+              }
+            } catch (error) {
+              console.log(`Matching move failed: ${matchingMove.san}`);
             }
           }
         }
-      } catch (error) {
-        console.error("Error executing AI move:", error);
+
+        if (validMove && moveResult) {
+          console.log(`Successfully executed move: ${validMove}`);
+          
+          // Update the game state
+          setGame(new Chess(freshGame.fen()));
+          setGameHistory(prev => [...prev, moveResult.san]);
+          setCurrentPlayer(freshGame.turn() === 'w' ? 'white' : 'black');
+          
+          // Continue AI vs AI game if both players are AI and game is not over
+          if (!freshGame.isGameOver() && isGameRunning) {
+            const nextPlayer = freshGame.turn() === 'w' ? whitePlayer : blackPlayer;
+            if (nextPlayer.type === 'ai') {
+              setTimeout(() => makeAiMove(freshGame, nextPlayer), 1500);
+            }
+          }
+        } else {
+          console.error(`Could not execute AI move: ${aiMove}`);
+          const thoughts = isWhite ? whiteCurrentThought : blackCurrentThought;
+          const setter = isWhite ? setWhiteCurrentThought : setBlackCurrentThought;
+          setter(thoughts + `\n\n[Error: Could not execute move "${aiMove}". Available moves: ${currentGame.moves().join(', ')}]`);
+        }
+      } else {
+        console.error("AI did not provide a move");
         const thoughts = isWhite ? whiteCurrentThought : blackCurrentThought;
         const setter = isWhite ? setWhiteCurrentThought : setBlackCurrentThought;
-        setter(thoughts + "\n\n[Error: Could not execute AI move]");
+        setter(thoughts + "\n\n[Error: AI did not provide a valid move]");
       }
+    } catch (error) {
+      console.error("Error in AI move generation:", error);
+      const thoughts = isWhite ? whiteCurrentThought : blackCurrentThought;
+      const setter = isWhite ? setWhiteCurrentThought : setBlackCurrentThought;
+      setter(thoughts + `\n\n[Error: ${error.message || 'Unknown error occurred'}]`);
     }
 
     setIsAiThinking(false);
@@ -200,6 +240,8 @@ export const ChessGame = () => {
   }, []);
 
   const undoMove = useCallback(() => {
+    if (!isGameRunning) return;
+    
     const gameCopy = new Chess(game.fen());
     gameCopy.undo();
     if (gameHistory.length > 1) {
@@ -208,15 +250,12 @@ export const ChessGame = () => {
     setGame(gameCopy);
     setGameHistory(prev => prev.slice(0, -2));
     setCurrentPlayer(gameCopy.turn() === 'w' ? 'white' : 'black');
-  }, [game, gameHistory]);
+  }, [game, gameHistory, isGameRunning]);
 
   const canMakeMove = () => {
     const currentPlayerConfig = currentPlayer === 'white' ? whitePlayer : blackPlayer;
-    return currentPlayerConfig.type === 'human' && !isAiThinking;
+    return currentPlayerConfig.type === 'human' && !isAiThinking && isGameRunning;
   };
-
-  const currentThoughts = currentPlayer === 'white' ? whiteThoughts : blackThoughts;
-  const currentCurrentThought = currentPlayer === 'white' ? whiteCurrentThought : blackCurrentThought;
 
   return (
     <div className="min-h-screen p-4">
@@ -254,7 +293,7 @@ export const ChessGame = () => {
             <ChessBoard 
               game={game} 
               onMove={makeMove} 
-              disabled={!canMakeMove() || !isGameRunning}
+              disabled={!canMakeMove()}
             />
           </div>
 
@@ -264,7 +303,7 @@ export const ChessGame = () => {
             <GameControls 
               onNewGame={resetGame}
               onUndo={undoMove}
-              canUndo={gameHistory.length > 0}
+              canUndo={gameHistory.length > 0 && isGameRunning}
               disabled={isAiThinking}
             />
 
