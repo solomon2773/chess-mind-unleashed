@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ChessBoard } from "./ChessBoard";
 import { DualThinkingWindow } from "./DualThinkingWindow";
 import { GameControls } from "./GameControls";
@@ -51,9 +51,15 @@ export const ChessGame = () => {
     name: 'AI Agent'
   });
 
+  // AI move coordination
+  const [pendingAiMove, setPendingAiMove] = useState<{player: 'white' | 'black'} | null>(null);
+
   const handleAiMove = useCallback((currentGame: any, playerConfig: PlayerConfig) => {
-    // This will be handled by the AIMoveHandler component
-  }, []);
+    if (!isGameRunning || currentGame.isGameOver()) return;
+    
+    const player = currentGame.turn() === 'w' ? 'white' : 'black';
+    setPendingAiMove({ player });
+  }, [isGameRunning]);
 
   const { makeMove } = useMoveHandler({
     game,
@@ -68,7 +74,7 @@ export const ChessGame = () => {
     setIsGameRunning(prev => {
       const newValue = !prev;
       
-      // If starting the game and current player is AI, make AI move
+      // If starting the game and current player is AI, trigger AI move
       if (newValue && !game.isGameOver()) {
         const currentPlayerConfig = game.turn() === 'w' ? whitePlayer : blackPlayer;
         if (currentPlayerConfig.type === 'ai') {
@@ -84,6 +90,7 @@ export const ChessGame = () => {
     resetGame();
     clearThoughts();
     setIsAiThinking(false);
+    setPendingAiMove(null);
   }, [resetGame, clearThoughts]);
 
   const canMakeMove = () => {
@@ -94,7 +101,7 @@ export const ChessGame = () => {
   const handleAiMoveComplete = useCallback((newGame: any, moveResult: any) => {
     updateGameState(newGame, moveResult);
     
-    // Continue AI vs AI game if both players are AI and game is not over
+    // Check if next player is also AI and continue the game
     if (!newGame.isGameOver() && isGameRunning) {
       const nextPlayer = newGame.turn() === 'w' ? whitePlayer : blackPlayer;
       if (nextPlayer.type === 'ai') {
@@ -103,20 +110,48 @@ export const ChessGame = () => {
     }
   }, [updateGameState, isGameRunning, whitePlayer, blackPlayer, handleAiMove]);
 
+  const handleMoveProcessed = useCallback(() => {
+    setPendingAiMove(null);
+  }, []);
+
+  // Determine which AI should move
+  const shouldWhiteAiMove = pendingAiMove?.player === 'white' && whitePlayer.type === 'ai';
+  const shouldBlackAiMove = pendingAiMove?.player === 'black' && blackPlayer.type === 'ai';
+
   return (
     <div className="min-h-screen p-4">
-      {/* AI Move Handler - invisible component that handles AI logic */}
+      {/* White AI Move Handler */}
       <AIMoveHandler
         currentGame={game}
-        playerConfig={currentPlayer === 'white' ? whitePlayer : blackPlayer}
+        playerConfig={whitePlayer}
         apiKeys={apiKeys}
         isGameRunning={isGameRunning}
+        currentPlayer="white"
+        shouldMakeMove={shouldWhiteAiMove}
         onMoveComplete={handleAiMoveComplete}
         onThinkingStart={() => setIsAiThinking(true)}
         onThinkingEnd={() => setIsAiThinking(false)}
         onThoughtUpdate={updateThoughts}
         onClearThoughts={clearCurrentThoughts}
         onError={addErrorToThoughts}
+        onMoveProcessed={handleMoveProcessed}
+      />
+
+      {/* Black AI Move Handler */}
+      <AIMoveHandler
+        currentGame={game}
+        playerConfig={blackPlayer}
+        apiKeys={apiKeys}
+        isGameRunning={isGameRunning}
+        currentPlayer="black"
+        shouldMakeMove={shouldBlackAiMove}
+        onMoveComplete={handleAiMoveComplete}
+        onThinkingStart={() => setIsAiThinking(true)}
+        onThinkingEnd={() => setIsAiThinking(false)}
+        onThoughtUpdate={updateThoughts}
+        onClearThoughts={clearCurrentThoughts}
+        onError={addErrorToThoughts}
+        onMoveProcessed={handleMoveProcessed}
       />
 
       <div className="max-w-7xl mx-auto">
