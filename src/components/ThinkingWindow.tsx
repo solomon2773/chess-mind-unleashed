@@ -7,9 +7,10 @@ interface ThinkingWindowProps {
   thoughts: string;
   currentThought: string;
   isThinking: boolean;
+  playerName?: string;
 }
 
-export const ThinkingWindow = ({ thoughts, currentThought, isThinking }: ThinkingWindowProps) => {
+export const ThinkingWindow = ({ thoughts, currentThought, isThinking, playerName }: ThinkingWindowProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,7 +30,9 @@ export const ThinkingWindow = ({ thoughts, currentThought, isThinking }: Thinkin
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Brain className="w-5 h-5" />
-            <h3 className="font-semibold">AI Thinking Process</h3>
+            <h3 className="font-semibold">
+              {playerName ? `${playerName} - Thinking Process` : 'AI Thinking Process'}
+            </h3>
           </div>
           <div className="flex items-center gap-2">
             <AnimatePresence>

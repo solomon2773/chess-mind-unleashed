@@ -5,17 +5,54 @@ import { ChessBoard } from "./ChessBoard";
 import { ThinkingWindow } from "./ThinkingWindow";
 import { GameControls } from "./GameControls";
 import { GameStatus } from "./GameStatus";
-import { ChessAgent } from "@/lib/chessAgent";
+import { PlayerConfig, PlayerConfig as PlayerConfigComponent } from "./PlayerConfig";
+import { ApiKeysConfig } from "./ApiKeysConfig";
+import { LangChainChessAgent, LLMConfig } from "@/lib/langchainChessAgent";
 
 export const ChessGame = () => {
   const [game, setGame] = useState(new Chess());
   const [gameHistory, setGameHistory] = useState<string[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
-  const [aiThoughts, setAiThoughts] = useState<string>("");
-  const [currentThought, setCurrentThought] = useState<string>("");
-  const [apiKey, setApiKey] = useState<string>("");
+  const [currentPlayer, setCurrentPlayer] = useState<'white' | 'black'>('white');
+  
+  // AI Thinking states for both players
+  const [whiteThoughts, setWhiteThoughts] = useState<string>("");
+  const [blackThoughts, setBlackThoughts] = useState<string>("");
+  const [whiteCurrentThought, setWhiteCurrentThought] = useState<string>("");
+  const [blackCurrentThought, setBlackCurrentThought] = useState<string>("");
 
-  const chessAgent = new ChessAgent(apiKey);
+  // API Keys
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+
+  // Player configurations
+  const [whitePlayer, setWhitePlayer] = useState<PlayerConfig>({
+    type: 'human',
+    name: 'Human'
+  });
+  
+  const [blackPlayer, setBlackPlayer] = useState<PlayerConfig>({
+    type: 'ai',
+    llmProvider: 'openai-gpt4',
+    name: 'AI Agent'
+  });
+
+  // Chess agents
+  const createAgent = (config: PlayerConfig): LangChainChessAgent | null => {
+    if (config.type !== 'ai' || !config.llmProvider) return null;
+    
+    const requiredKey = config.llmProvider.startsWith('openai') ? 'openai' : 'anthropic';
+    const apiKey = apiKeys[requiredKey];
+    
+    if (!apiKey) return null;
+
+    const llmConfig: LLMConfig = {
+      provider: config.llmProvider,
+      apiKey,
+      temperature: 0.7
+    };
+
+    return new LangChainChessAgent(llmConfig);
+  };
 
   const makeMove = useCallback(async (move: string) => {
     try {
@@ -25,82 +62,126 @@ export const ChessGame = () => {
       if (moveResult) {
         setGame(gameCopy);
         setGameHistory(prev => [...prev, moveResult.san]);
+        setCurrentPlayer(gameCopy.turn() === 'w' ? 'white' : 'black');
         
-        // If game is not over, let AI make its move
+        // Check if next player is AI and game is not over
         if (!gameCopy.isGameOver()) {
-          setIsAiThinking(true);
-          setCurrentThought("");
-          setAiThoughts("");
+          const nextPlayer = gameCopy.turn() === 'w' ? whitePlayer : blackPlayer;
           
-          const aiMove = await chessAgent.getMove(gameCopy.fen(), (thought) => {
-            setCurrentThought(thought);
-            setAiThoughts(prev => prev + thought);
-          });
-          
-          if (aiMove) {
-            console.log("AI suggested move:", aiMove);
-            try {
-              // Try the move as-is first (standard algebraic notation)
-              let aiMoveResult = null;
-              try {
-                aiMoveResult = gameCopy.move(aiMove);
-              } catch (firstError) {
-                // If that fails, try to find a valid move that matches
-                const possibleMoves = gameCopy.moves({ verbose: true });
-                const matchingMove = possibleMoves.find(m => 
-                  m.san === aiMove || 
-                  m.lan === aiMove || 
-                  m.from + m.to === aiMove ||
-                  m.san.replace(/[+#]/, '') === aiMove.replace(/[+#]/, '')
-                );
-                
-                if (matchingMove) {
-                  aiMoveResult = gameCopy.move(matchingMove.san);
-                } else {
-                  throw firstError;
-                }
-              }
-              
-              if (aiMoveResult) {
-                setGame(new Chess(gameCopy.fen()));
-                setGameHistory(prev => [...prev, aiMoveResult.san]);
-                console.log("AI move executed successfully:", aiMoveResult.san);
-              } else {
-                console.error("AI move was invalid:", aiMove);
-                setCurrentThought(prev => prev + "\n\n[Error: AI suggested an invalid move]");
-              }
-            } catch (error) {
-              console.error("Error executing AI move:", error);
-              setCurrentThought(prev => prev + "\n\n[Error: Could not execute AI move]");
-            }
-          } else {
-            console.log("AI did not return a valid move");
-            setCurrentThought(prev => prev + "\n\n[Error: AI did not provide a valid move]");
+          if (nextPlayer.type === 'ai') {
+            await makeAiMove(gameCopy, nextPlayer);
           }
-          
-          setIsAiThinking(false);
         }
       }
     } catch (error) {
       console.error("Invalid move:", error);
     }
-  }, [game, chessAgent]);
+  }, [game, whitePlayer, blackPlayer, apiKeys]);
+
+  const makeAiMove = async (currentGame: Chess, playerConfig: PlayerConfig) => {
+    const agent = createAgent(playerConfig);
+    if (!agent) return;
+
+    setIsAiThinking(true);
+    const isWhite = currentGame.turn() === 'w';
+    
+    // Clear previous thoughts
+    if (isWhite) {
+      setWhiteCurrentThought("");
+      setWhiteThoughts("");
+    } else {
+      setBlackCurrentThought("");
+      setBlackThoughts("");
+    }
+
+    const aiMove = await agent.getMove(currentGame.fen(), (thought) => {
+      if (isWhite) {
+        setWhiteCurrentThought(thought);
+        setWhiteThoughts(prev => prev + thought);
+      } else {
+        setBlackCurrentThought(thought);
+        setBlackThoughts(prev => prev + thought);
+      }
+    });
+
+    if (aiMove) {
+      try {
+        // Convert move notation if needed
+        let validMove = aiMove;
+        
+        try {
+          currentGame.move(validMove);
+        } catch {
+          // Try to find matching move from valid moves
+          const possibleMoves = currentGame.moves({ verbose: true });
+          const matchingMove = possibleMoves.find(m => 
+            m.san === aiMove || 
+            m.lan === aiMove || 
+            m.from + m.to === aiMove ||
+            m.san.replace(/[+#]/, '') === aiMove.replace(/[+#]/, '')
+          );
+          
+          if (matchingMove) {
+            validMove = matchingMove.san;
+          } else {
+            throw new Error("No matching move found");
+          }
+        }
+
+        const aiMoveResult = currentGame.move(validMove);
+        if (aiMoveResult) {
+          setGame(new Chess(currentGame.fen()));
+          setGameHistory(prev => [...prev, aiMoveResult.san]);
+          setCurrentPlayer(currentGame.turn() === 'w' ? 'white' : 'black');
+          
+          // If both players are AI, continue the game
+          if (!currentGame.isGameOver()) {
+            const nextPlayer = currentGame.turn() === 'w' ? whitePlayer : blackPlayer;
+            if (nextPlayer.type === 'ai') {
+              setTimeout(() => makeAiMove(currentGame, nextPlayer), 1000);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error executing AI move:", error);
+        const thoughts = isWhite ? whiteCurrentThought : blackCurrentThought;
+        const setter = isWhite ? setWhiteCurrentThought : setBlackCurrentThought;
+        setter(thoughts + "\n\n[Error: Could not execute AI move]");
+      }
+    }
+
+    setIsAiThinking(false);
+  };
 
   const resetGame = useCallback(() => {
     setGame(new Chess());
     setGameHistory([]);
-    setAiThoughts("");
-    setCurrentThought("");
+    setCurrentPlayer('white');
+    setWhiteThoughts("");
+    setBlackThoughts("");
+    setWhiteCurrentThought("");
+    setBlackCurrentThought("");
     setIsAiThinking(false);
   }, []);
 
   const undoMove = useCallback(() => {
     const gameCopy = new Chess(game.fen());
     gameCopy.undo();
-    gameCopy.undo(); // Undo both player and AI moves
+    if (gameHistory.length > 1) {
+      gameCopy.undo(); // Undo both player moves if both are AI
+    }
     setGame(gameCopy);
     setGameHistory(prev => prev.slice(0, -2));
-  }, [game]);
+    setCurrentPlayer(gameCopy.turn() === 'w' ? 'white' : 'black');
+  }, [game, gameHistory]);
+
+  const canMakeMove = () => {
+    const currentPlayerConfig = currentPlayer === 'white' ? whitePlayer : blackPlayer;
+    return currentPlayerConfig.type === 'human' && !isAiThinking;
+  };
+
+  const currentThoughts = currentPlayer === 'white' ? whiteThoughts : blackThoughts;
+  const currentCurrentThought = currentPlayer === 'white' ? whiteCurrentThought : blackCurrentThought;
 
   return (
     <div className="min-h-screen p-4">
@@ -108,28 +189,25 @@ export const ChessGame = () => {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">ChessMind</h1>
-          <p className="text-gray-600">Experience chess with an AI that shows its thinking process</p>
+          <p className="text-gray-600">Experience chess with AI agents powered by different LLMs</p>
         </div>
 
-        {/* API Key Input */}
-        {!apiKey && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <label className="block text-sm font-medium text-blue-900 mb-2">
-              Enter your OpenAI API Key to enable the chess agent:
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                placeholder="sk-..."
-                className="flex-1 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </div>
-            <p className="text-xs text-blue-700 mt-1">
-              Your API key is only stored locally and used for AI moves.
-            </p>
-          </div>
-        )}
+        {/* Configuration Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <ApiKeysConfig apiKeys={apiKeys} onApiKeysChange={setApiKeys} />
+          <PlayerConfigComponent 
+            player="white" 
+            config={whitePlayer} 
+            onConfigChange={setWhitePlayer}
+            availableApiKeys={apiKeys}
+          />
+          <PlayerConfigComponent 
+            player="black" 
+            config={blackPlayer} 
+            onConfigChange={setBlackPlayer}
+            availableApiKeys={apiKeys}
+          />
+        </div>
 
         {/* Game Status */}
         <GameStatus game={game} isAiThinking={isAiThinking} />
@@ -141,7 +219,7 @@ export const ChessGame = () => {
             <ChessBoard 
               game={game} 
               onMove={makeMove} 
-              disabled={isAiThinking || !apiKey}
+              disabled={!canMakeMove()}
             />
           </div>
 
@@ -157,9 +235,10 @@ export const ChessGame = () => {
 
             {/* AI Thinking Window */}
             <ThinkingWindow 
-              thoughts={aiThoughts}
-              currentThought={currentThought}
+              thoughts={currentThoughts}
+              currentThought={currentCurrentThought}
               isThinking={isAiThinking}
+              playerName={currentPlayer === 'white' ? whitePlayer.name : blackPlayer.name}
             />
 
             {/* Move History */}
@@ -169,14 +248,12 @@ export const ChessGame = () => {
                 {gameHistory.length === 0 ? (
                   <p className="text-gray-500 text-sm">No moves yet</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="space-y-1 text-sm">
                     {Array.from({ length: Math.ceil(gameHistory.length / 2) }, (_, i) => (
-                      <div key={i} className="flex gap-2">
+                      <div key={i} className="flex gap-4">
                         <span className="w-8 text-gray-500">{i + 1}.</span>
-                        <span className="font-mono">{gameHistory[i * 2]}</span>
-                        {gameHistory[i * 2 + 1] && (
-                          <span className="font-mono">{gameHistory[i * 2 + 1]}</span>
-                        )}
+                        <span className="font-mono min-w-16">{gameHistory[i * 2] || ''}</span>
+                        <span className="font-mono min-w-16">{gameHistory[i * 2 + 1] || ''}</span>
                       </div>
                     ))}
                   </div>
