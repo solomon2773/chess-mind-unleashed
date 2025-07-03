@@ -1,4 +1,3 @@
-
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -62,7 +61,7 @@ export class LangChainChessAgent {
 
       case 'gemini-pro':
         return new ChatGoogleGenerativeAI({
-          modelName: 'gemini-pro',
+          model: 'gemini-pro',
           temperature,
           apiKey,
           streaming: true,
@@ -70,7 +69,7 @@ export class LangChainChessAgent {
 
       case 'gemini-flash':
         return new ChatGoogleGenerativeAI({
-          modelName: 'gemini-1.5-flash',
+          model: 'gemini-1.5-flash',
           temperature,
           apiKey,
           streaming: true,
