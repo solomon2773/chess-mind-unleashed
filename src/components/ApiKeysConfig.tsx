@@ -21,6 +21,8 @@ export const ApiKeysConfig = ({ apiKeys, onApiKeysChange }: ApiKeysConfigProps) 
   const keyConfigs = [
     { key: 'openai', label: 'OpenAI API Key', placeholder: 'sk-...' },
     { key: 'anthropic', label: 'Anthropic API Key', placeholder: 'sk-ant-...' },
+    { key: 'google', label: 'Google AI API Key', placeholder: 'AIza...' },
+    { key: 'azure', label: 'Azure OpenAI API Key', placeholder: 'your-azure-key' },
   ];
 
   return (
@@ -53,6 +55,37 @@ export const ApiKeysConfig = ({ apiKeys, onApiKeysChange }: ApiKeysConfigProps) 
           </div>
         </div>
       ))}
+
+      {/* Azure Configuration */}
+      {apiKeys.azure && (
+        <div className="space-y-3 p-3 bg-blue-50 rounded-md">
+          <h4 className="text-sm font-medium text-blue-800">Azure Configuration</h4>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Azure Endpoint
+            </label>
+            <input
+              type="text"
+              placeholder="https://your-resource.openai.azure.com"
+              value={apiKeys.azureEndpoint || ''}
+              onChange={(e) => handleKeyChange('azureEndpoint', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Deployment Name
+            </label>
+            <input
+              type="text"
+              placeholder="your-deployment-name"
+              value={apiKeys.azureDeploymentName || ''}
+              onChange={(e) => handleKeyChange('azureDeploymentName', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

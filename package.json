@@ -14,6 +14,7 @@
     "@hookform/resolvers": "^3.9.0",
     "@langchain/anthropic": "^0.3.24",
     "@langchain/core": "^0.3.61",
+    "@langchain/google-genai": "^0.2.14",
     "@langchain/openai": "^0.5.16",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",

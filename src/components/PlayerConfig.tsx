@@ -24,6 +24,10 @@ export const PlayerConfig = ({ player, config, onConfigChange, availableApiKeys 
     { value: 'openai-gpt35', label: 'GPT-3.5 Turbo', requiresKey: 'openai' },
     { value: 'claude-sonnet', label: 'Claude 3.5 Sonnet', requiresKey: 'anthropic' },
     { value: 'claude-haiku', label: 'Claude 3 Haiku', requiresKey: 'anthropic' },
+    { value: 'gemini-pro', label: 'Gemini Pro', requiresKey: 'google' },
+    { value: 'gemini-flash', label: 'Gemini 1.5 Flash', requiresKey: 'google' },
+    { value: 'azure-gpt4', label: 'Azure GPT-4', requiresKey: 'azure' },
+    { value: 'azure-gpt35', label: 'Azure GPT-3.5', requiresKey: 'azure' },
   ];
 
   const playerColor = player === 'white' ? 'White' : 'Black';
@@ -70,16 +74,23 @@ export const PlayerConfig = ({ player, config, onConfigChange, availableApiKeys 
                 <SelectValue placeholder="Select AI model" />
               </SelectTrigger>
               <SelectContent>
-                {llmOptions.map((option) => (
-                  <SelectItem 
-                    key={option.value} 
-                    value={option.value}
-                    disabled={!availableApiKeys[option.requiresKey]}
-                  >
-                    {option.label}
-                    {!availableApiKeys[option.requiresKey] && ' (API key required)'}
-                  </SelectItem>
-                ))}
+                {llmOptions.map((option) => {
+                  const hasRequiredKey = availableApiKeys[option.requiresKey];
+                  const hasAzureConfig = option.requiresKey === 'azure' 
+                    ? hasRequiredKey && availableApiKeys.azureEndpoint && availableApiKeys.azureDeploymentName
+                    : hasRequiredKey;
+                  
+                  return (
+                    <SelectItem 
+                      key={option.value} 
+                      value={option.value}
+                      disabled={!hasAzureConfig}
+                    >
+                      {option.label}
+                      {!hasAzureConfig && ' (Configuration required)'}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>

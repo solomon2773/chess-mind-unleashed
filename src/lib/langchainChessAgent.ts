@@ -1,15 +1,18 @@
 
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { BaseLanguageModelInterface } from "@langchain/core/language_models/base";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 
-export type LLMProvider = 'openai-gpt4' | 'openai-gpt35' | 'claude-sonnet' | 'claude-haiku';
+export type LLMProvider = 'openai-gpt4' | 'openai-gpt35' | 'claude-sonnet' | 'claude-haiku' | 'gemini-pro' | 'gemini-flash' | 'azure-gpt4' | 'azure-gpt35';
 
 export interface LLMConfig {
   provider: LLMProvider;
   apiKey: string;
   temperature?: number;
+  azureEndpoint?: string;
+  azureDeploymentName?: string;
 }
 
 export class LangChainChessAgent {
@@ -22,7 +25,7 @@ export class LangChainChessAgent {
   }
 
   private createModel(config: LLMConfig): BaseLanguageModelInterface {
-    const { provider, apiKey, temperature = 0.7 } = config;
+    const { provider, apiKey, temperature = 0.7, azureEndpoint, azureDeploymentName } = config;
 
     switch (provider) {
       case 'openai-gpt4':
@@ -55,6 +58,58 @@ export class LangChainChessAgent {
           temperature,
           anthropicApiKey: apiKey,
           streaming: true,
+        });
+
+      case 'gemini-pro':
+        return new ChatGoogleGenerativeAI({
+          modelName: 'gemini-pro',
+          temperature,
+          apiKey,
+          streaming: true,
+        });
+
+      case 'gemini-flash':
+        return new ChatGoogleGenerativeAI({
+          modelName: 'gemini-1.5-flash',
+          temperature,
+          apiKey,
+          streaming: true,
+        });
+
+      case 'azure-gpt4':
+        if (!azureEndpoint || !azureDeploymentName) {
+          throw new Error('Azure endpoint and deployment name are required for Azure OpenAI');
+        }
+        return new ChatOpenAI({
+          modelName: azureDeploymentName,
+          temperature,
+          openAIApiKey: apiKey,
+          streaming: true,
+          configuration: {
+            baseURL: `${azureEndpoint}/openai/deployments/${azureDeploymentName}`,
+            defaultQuery: { 'api-version': '2024-02-01' },
+            defaultHeaders: {
+              'api-key': apiKey,
+            },
+          },
+        });
+
+      case 'azure-gpt35':
+        if (!azureEndpoint || !azureDeploymentName) {
+          throw new Error('Azure endpoint and deployment name are required for Azure OpenAI');
+        }
+        return new ChatOpenAI({
+          modelName: azureDeploymentName,
+          temperature,
+          openAIApiKey: apiKey,
+          streaming: true,
+          configuration: {
+            baseURL: `${azureEndpoint}/openai/deployments/${azureDeploymentName}`,
+            defaultQuery: { 'api-version': '2024-02-01' },
+            defaultHeaders: {
+              'api-key': apiKey,
+            },
+          },
         });
       
       default:
@@ -153,7 +208,11 @@ Think like a grandmaster and show your complete thought process!
       'openai-gpt4': 'GPT-4 Turbo',
       'openai-gpt35': 'GPT-3.5 Turbo',
       'claude-sonnet': 'Claude 3.5 Sonnet',
-      'claude-haiku': 'Claude 3 Haiku'
+      'claude-haiku': 'Claude 3 Haiku',
+      'gemini-pro': 'Gemini Pro',
+      'gemini-flash': 'Gemini 1.5 Flash',
+      'azure-gpt4': 'Azure GPT-4',
+      'azure-gpt35': 'Azure GPT-3.5'
     };
     return modelNames[this.config.provider] || this.config.provider;
   }

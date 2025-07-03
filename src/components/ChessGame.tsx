@@ -1,8 +1,7 @@
-
 import { useState, useCallback } from "react";
 import { Chess } from "chess.js";
 import { ChessBoard } from "./ChessBoard";
-import { ThinkingWindow } from "./ThinkingWindow";
+import { DualThinkingWindow } from "./DualThinkingWindow";
 import { GameControls } from "./GameControls";
 import { GameStatus } from "./GameStatus";
 import { PlayerConfig, PlayerConfig as PlayerConfigComponent } from "./PlayerConfig";
@@ -14,6 +13,7 @@ export const ChessGame = () => {
   const [gameHistory, setGameHistory] = useState<string[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<'white' | 'black'>('white');
+  const [isGameRunning, setIsGameRunning] = useState(false);
   
   // AI Thinking states for both players
   const [whiteThoughts, setWhiteThoughts] = useState<string>("");
@@ -40,19 +40,53 @@ export const ChessGame = () => {
   const createAgent = (config: PlayerConfig): LangChainChessAgent | null => {
     if (config.type !== 'ai' || !config.llmProvider) return null;
     
-    const requiredKey = config.llmProvider.startsWith('openai') ? 'openai' : 'anthropic';
-    const apiKey = apiKeys[requiredKey];
-    
-    if (!apiKey) return null;
+    let requiredKey: string;
+    let hasRequiredConfig = false;
+
+    if (config.llmProvider.startsWith('openai')) {
+      requiredKey = 'openai';
+      hasRequiredConfig = !!apiKeys[requiredKey];
+    } else if (config.llmProvider.startsWith('claude')) {
+      requiredKey = 'anthropic';
+      hasRequiredConfig = !!apiKeys[requiredKey];
+    } else if (config.llmProvider.startsWith('gemini')) {
+      requiredKey = 'google';
+      hasRequiredConfig = !!apiKeys[requiredKey];
+    } else if (config.llmProvider.startsWith('azure')) {
+      requiredKey = 'azure';
+      hasRequiredConfig = !!(apiKeys.azure && apiKeys.azureEndpoint && apiKeys.azureDeploymentName);
+    }
+
+    if (!hasRequiredConfig) return null;
 
     const llmConfig: LLMConfig = {
       provider: config.llmProvider,
-      apiKey,
-      temperature: 0.7
+      apiKey: apiKeys[requiredKey],
+      temperature: 0.7,
+      ...(config.llmProvider.startsWith('azure') && {
+        azureEndpoint: apiKeys.azureEndpoint,
+        azureDeploymentName: apiKeys.azureDeploymentName
+      })
     };
 
     return new LangChainChessAgent(llmConfig);
   };
+
+  const toggleGame = useCallback(() => {
+    setIsGameRunning(prev => {
+      const newValue = !prev;
+      
+      // If starting the game and current player is AI, make AI move
+      if (newValue && !game.isGameOver()) {
+        const currentPlayerConfig = game.turn() === 'w' ? whitePlayer : blackPlayer;
+        if (currentPlayerConfig.type === 'ai') {
+          setTimeout(() => makeAiMove(game, currentPlayerConfig), 500);
+        }
+      }
+      
+      return newValue;
+    });
+  }, [game, whitePlayer, blackPlayer]);
 
   const makeMove = useCallback(async (move: string) => {
     try {
@@ -162,6 +196,7 @@ export const ChessGame = () => {
     setWhiteCurrentThought("");
     setBlackCurrentThought("");
     setIsAiThinking(false);
+    setIsGameRunning(false);
   }, []);
 
   const undoMove = useCallback(() => {
@@ -219,7 +254,7 @@ export const ChessGame = () => {
             <ChessBoard 
               game={game} 
               onMove={makeMove} 
-              disabled={!canMakeMove()}
+              disabled={!canMakeMove() || !isGameRunning}
             />
           </div>
 
@@ -233,12 +268,18 @@ export const ChessGame = () => {
               disabled={isAiThinking}
             />
 
-            {/* AI Thinking Window */}
-            <ThinkingWindow 
-              thoughts={currentThoughts}
-              currentThought={currentCurrentThought}
+            {/* Dual AI Thinking Window */}
+            <DualThinkingWindow 
+              whiteThoughts={whiteThoughts}
+              whiteCurrentThought={whiteCurrentThought}
+              blackThoughts={blackThoughts}
+              blackCurrentThought={blackCurrentThought}
               isThinking={isAiThinking}
-              playerName={currentPlayer === 'white' ? whitePlayer.name : blackPlayer.name}
+              currentPlayer={currentPlayer}
+              whitePlayerName={whitePlayer.name}
+              blackPlayerName={blackPlayer.name}
+              isGameRunning={isGameRunning}
+              onToggleGame={toggleGame}
             />
 
             {/* Move History */}
